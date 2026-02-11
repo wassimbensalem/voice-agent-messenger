@@ -18,10 +18,22 @@ That's it! All services will be running:
 
 | Service | URL | Description |
 |---------|-----|-------------|
+| **Web UI** | http://localhost:3000 | Voice chat interface |
 | Signaling Server | http://localhost:8080 | WebRTC signaling |
 | Whisper STT | http://localhost:8001 | Speech-to-text |
-| Piper TTS | http://localhost:5000 | Text-to-speech |
+| Piper TTS | http://localhost:5001 | Text-to-speech |
 | Redis | localhost:6379 | Session storage |
+
+## Using the Web Interface
+
+Open your browser and navigate to **http://localhost:3000** to access the voice agent messenger interface.
+
+### Features:
+- 🎙️ **Voice Chat Rooms** - Create or join rooms for real-time voice communication
+- 🎤 **Speech-to-Text** - Record audio and get instant transcriptions
+- 🔊 **Text-to-Speech** - Convert text to natural-sounding speech
+- 📊 **Audio Visualization** - Real-time audio waveform display
+- 👥 **Participant Management** - See who's in your room
 
 ## Stopping Services
 
