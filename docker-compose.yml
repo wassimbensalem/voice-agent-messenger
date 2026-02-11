@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  # Redis for session storage and pub/sub
+  redis:
+    image: redis:7-alpine
+    container_name: voice-agent-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Whisper STT Service
+  whisper:
+    build:
+      context: ./whisper
+      dockerfile: Dockerfile
+    container_name: voice-agent-whisper
+    ports:
+      - "8001:8001"
+    environment:
+      - WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE:-base}
+      - WHISPER_DEVICE=${WHISPER_DEVICE:-cpu}
+      - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-int8}
+      - WHISPER_PORT=8001
+    volumes:
+      - ./piper-models:/models:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Piper TTS Service
+  piper:
+    build:
+      context: ./piper
+      dockerfile: Dockerfile
+    container_name: voice-agent-piper
+    ports:
+      - "5000:5000"
+    environment:
+      - PIPER_MODEL_PATH=${PIPER_MODEL_PATH:-/models/en_US-amy-medium.onnx}
+      - PIPER_PORT=5000
+    volumes:
+      - ./piper-models:/models:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # WebRTC Signaling Server
+  signaling:
+    build:
+      context: ./signaling-server
+      dockerfile: Dockerfile
+    container_name: voice-agent-signaling
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - NODE_ENV=production
+      - JWT_SECRET=${JWT_SECRET}
+      - CORS_ORIGIN=${CORS_ORIGIN:-*}
+      - HEARTBEAT_INTERVAL=30000
+      - ROOM_TIMEOUT=300000
+      - MAX_PARTICIPANTS=10
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=info
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  redis_data:

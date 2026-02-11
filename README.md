@@ -2,6 +2,33 @@
 
 A unified voice agent messaging system combining WebRTC signaling, speech-to-text (Whisper), and text-to-speech (Piper) capabilities.
 
+## Quick Start
+
+Get up and running in 5 commands:
+
+```bash
+git clone https://github.com/wassimbensalem/voice-agent-messenger.git
+cd voice-agent-messenger
+cp .env.example .env
+docker compose up -d
+curl http://localhost:8080/api/health
+```
+
+That's it! All services will be running:
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Signaling Server | http://localhost:8080 | WebRTC signaling |
+| Whisper STT | http://localhost:8001 | Speech-to-text |
+| Piper TTS | http://localhost:5000 | Text-to-speech |
+| Redis | localhost:6379 | Session storage |
+
+## Stopping Services
+
+```bash
+docker compose down
+```
+
 ## Repository Structure
 
 ```
@@ -10,102 +37,108 @@ voice-agent-messenger/
 ├── webrtc-client/           # WebRTC client library (TypeScript)
 ├── whisper/                 # Whisper STT implementations
 │   ├── whisper_server.py   # FastAPI Whisper server
-│   ├── whisper.cpp/        # Native Whisper C++ implementation
-│   └── WHISPER_DEPLOYMENT.md
+│   └── Dockerfile
 ├── piper/                   # Piper TTS implementation
 │   └── piper_server.py     # FastAPI Piper TTS server
-├── docs/                    # All documentation
-├── tests/                   # All test suites
-├── docker/                  # Docker configurations
+├── docker-compose.yml       # All services orchestration
+├── .env.example             # Environment template
 └── README.md               # This file
 ```
 
 ## Components
 
 ### Signaling Server
-Node.js + Socket.IO signaling server for WebRTC peer-to-peer communication.
-- **Location:** `signaling-server/`
+- **Port:** 8080
 - **Tech:** Node.js, TypeScript, Socket.IO, Redis
 - **Features:** Room management, JWT auth, ICE candidate exchange
 
-### WebRTC Client
-TypeScript client library for voice agent communication.
-- **Location:** `webrtc-client/`
-- **Tech:** TypeScript, WebRTC, Socket.IO
-- **Features:** Multi-peer mesh, audio tracks, signaling integration
-
 ### Whisper STT
-Speech-to-text using OpenAI's Whisper model.
-- **Location:** `whisper/`
-- **Implementations:**
-  - `whisper_server.py` - FastAPI server (Python, faster-whisper)
-  - `whisper.cpp/` - Native C++ implementation
 - **Port:** 8001
+- **Tech:** Python, FastAPI, faster-whisper
+- **Model:** base (configurable via WHISPER_MODEL_SIZE)
 
 ### Piper TTS
-Text-to-speech using Piper neural TTS.
-- **Location:** `piper/`
-- **Implementation:** `piper_server.py` - FastAPI server
 - **Port:** 5000
+- **Tech:** Python, FastAPI, Piper
+- **Model:** en_US-amy-medium (configurable via PIPER_MODEL_PATH)
 
+## API Endpoints
 
+### Signaling Server
+- `GET /api/health` - Health check
+- `GET /api/rooms` - List rooms
+- `POST /api/rooms` - Create room
+- `GET /api/redis-health` - Redis status
 
-All## Documentation documentation is in the `docs/` directory:
-- Architecture designs
-- API specifications
-- Research reports
-- Deployment guides
+### Whisper STT
+- `POST /transcribe` - Transcribe audio
+- `GET /health` - Health check
 
-## Quick Start
+### Piper TTS
+- `POST /synthesize` - Text to speech
+- `GET /health` - Health check
 
-### Start Signaling Server
+## Configuration
+
+Copy `.env.example` to `.env` and configure:
+
 ```bash
+# Required
+JWT_SECRET=your-secure-secret
+
+# Optional - Whisper settings
+WHISPER_MODEL_SIZE=base      # tiny, base, small, medium, large
+WHISPER_DEVICE=cpu           # cpu, cuda
+WHISPER_COMPUTE_TYPE=int8    # int8, int8_float16, float16
+
+# Optional - Piper settings
+PIPER_MODEL_PATH=/models/en_US-amy-medium.onnx
+```
+
+## Development
+
+### Run services manually:
+
+```bash
+# Start Redis
+redis-server
+
+# Signaling server
 cd signaling-server
 npm install
 npm start
-```
 
-### Start WebRTC Client
-```bash
-cd webrtc-client
-npm install
-npm run build
-```
-
-### Start Whisper STT Server
-```bash
+# Whisper server
 cd whisper
-python3 whisper_server.py
-# Or use native server:
-cd whisper.cpp
-./main -m models/ggml-small.bin -f samples/jfk.wav -p 8001
-```
+python3 -m venv venv
+source venv/bin/activate
+pip install -r whisper_requirements.txt
+python whisper_server.py
 
-### Start Piper TTS Server
-```bash
+# Piper server
 cd piper
-python3 piper_server.py
-```
-
-## Docker
-
-Deploy using Docker:
-```bash
-cd docker
-docker build -t voice-agent-signaling -f Dockerfile ..
+python3 -m venv venv
+source venv/bin/activate
+pip install -r piper_requirements.txt
+python piper_server.py
 ```
 
 ## Testing
 
-All tests are in the `tests/` directory:
-- Unit tests for each component
-- Integration tests
-- E2E tests
+```bash
+# Test transcription
+curl -X POST -F "audio=@test.wav" http://localhost:8001/transcribe
 
-## Authors
+# Test TTS
+curl -X POST http://localhost:5000/synthesize \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello, world!"}'
 
-- **Max** - Signaling server, Piper TTS, Whisper STT (Python)
-- **Scout** - WebRTC client, Whisper.cpp, Research
+# Check all services
+curl http://localhost:8080/api/health
+curl http://localhost:8001/health
+curl http://localhost:5000/health
+```
 
 ## License
 
