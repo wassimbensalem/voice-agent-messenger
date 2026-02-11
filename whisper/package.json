@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "smart-whisper": "^0.8.1"
+  }
+}

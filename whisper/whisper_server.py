@@ -11,8 +11,18 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 import uvicorn
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Whisper STT Server")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for development
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Configuration
 MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "base")

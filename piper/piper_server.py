@@ -11,8 +11,18 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 import uvicorn
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Piper TTS Server")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for development
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Configuration
 MODEL_PATH = os.environ.get("PIPER_MODEL_PATH", "/root/.openclaw/workspace-agents/max/piper-models/en_US-amy-medium.onnx")
@@ -27,10 +37,11 @@ class TTSResponse(BaseModel):
     message: str
     audio_path: Optional[str] = None
 
-@app.post("/synthesize", response_model=TTSResponse)
+@app.post("/synthesize")
 async def synthesize_speech(request: TTSRequest):
     """
     Convert text to speech using Piper TTS.
+    Returns audio file directly.
     """
     if not request.text or len(request.text.strip()) == 0:
         raise HTTPException(status_code=400, detail="Text cannot be empty")
@@ -55,12 +66,13 @@ async def synthesize_speech(request: TTSRequest):
         if process.returncode != 0:
             raise Exception(f"Piper failed: {process.stderr}")
         
-        response = TTSResponse(
-            success=True,
-            message="TTS synthesis successful",
-            audio_path=output_path
+        # Read the audio file and return it
+        from fastapi.responses import FileResponse
+        return FileResponse(
+            output_path,
+            media_type="audio/wav",
+            filename="speech.wav"
         )
-        return response
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
