@@ -1,0 +1,36 @@
+{
+  "name": "webrtc-voice-client",
+  "version": "1.0.0",
+  "description": "WebRTC client library for voice agents with Socket.IO signaling and Piper TTS + Whisper STT integration",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "test": "jest"
+  },
+  "keywords": [
+    "webrtc",
+    "voice",
+    "signaling",
+    "socket.io",
+    "agent",
+    "audio"
+  ],
+  "author": "OpenClaw",
+  "license": "MIT",
+  "dependencies": {
+    "jsonwebtoken": "^9.0.3",
+    "pcm-util": "^2.1.0",
+    "socket.io-client": "^4.7.2",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.33",
+    "@types/uuid": "^9.0.7",
+    "global-agent": "^4.1.2",
+    "node-fetch": "^2.7.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.2"
+  }
+}
