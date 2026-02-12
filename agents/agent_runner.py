@@ -141,12 +141,33 @@ class AgentRunner:
         topic = event.get("topic")
         turn_num = event.get("turn", 0)
 
-        # THINK
-        reply = await asyncio.to_thread(
-            self.voice_agent.think,
-            heard_text=context if turn_num > 0 else None,
-            topic=topic
-        )
+        # THINK and detect tool calls
+        async def think_with_status():
+            # Broadcast THINKING
+            await ws.send(json.dumps({
+                "type": "agent_thinking",
+                "agent": self.voice_agent.to_dict()
+            }))
+            
+            def handle_tool_call(tool, query):
+                # This runs in a background thread, but we can use the loop
+                asyncio.run_coroutine_threadsafe(
+                    ws.send(json.dumps({
+                        "type": "agent_searching",
+                        "agent": self.voice_agent.to_dict(),
+                        "query": query
+                    })),
+                    asyncio.get_event_loop()
+                )
+
+            return await asyncio.to_thread(
+                self.voice_agent.think,
+                heard_text=context if turn_num > 0 else None,
+                topic=topic,
+                on_tool_call=handle_tool_call
+            )
+
+        reply = await think_with_status()
 
         # SPEAK
         audio_bytes = await asyncio.to_thread(self.voice_agent.speak, reply)

@@ -25,7 +25,17 @@ from typing import Dict, Optional
 SIGNALING_URL = os.environ.get("SIGNALING_URL", "http://signaling:8080")
 ORCHESTRATOR_URL = os.environ.get("ORCHESTRATOR_URL", "ws://orchestrator:8765/agent")
 DEFAULT_MAX_TURNS = 20
-DEFAULT_TOPIC = "The future of autonomous AI agents"
+SEED_TOPICS = [
+    "The ethical implications of space-based solar power",
+    "How decentralized finance will change global banking by 2030",
+    "The role of mycelium-based architecture in sustainable cities",
+    "Will autonomous humanoid robots replace domestic labor by 2035?",
+    "The discovery of recent exoplanets in the Proxima Centauri system",
+    "How generative AI is impacting the future of physical craftsmanship",
+    "The potential of cold fusion as a viable energy source in 2024",
+    "Quantum computing breakthroughs in breaking current encryption standards"
+]
+DEFAULT_TOPIC = random.choice(SEED_TOPICS)
 
 logging.basicConfig(
     level=logging.INFO,

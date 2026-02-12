@@ -71,63 +71,93 @@ class VoiceAgent:
         except Exception as e:
             self.logger.error(f"Failed to save memory: {e}")
 
-    def think(self, heard_text: str | None = None, topic: str | None = None) -> str:
+    def search_web(self, query: str) -> str:
+        """Perform a web search using DuckDuckGo."""
+        self.logger.info(f"🔍 Searching for: {query}")
+        try:
+            from duckduckgo_search import DDGS
+            with DDGS() as ddgs:
+                results = list(ddgs.text(query, max_results=3))
+                if not results:
+                    return "No results found."
+                
+                formatted = []
+                for r in results:
+                    formatted.append(f"Source: {r['title']}\nSnippet: {r['body']}")
+                return "\n\n".join(formatted)
+        except Exception as e:
+            self.logger.error(f"Search error: {e}")
+            return f"Search failed: {str(e)}"
+
+    def think(self, heard_text: str | None = None, topic: str | None = None, on_tool_call: callable = None) -> str:
         """
         Use the LLM to generate a response.
-        - If heard_text is provided, respond to what was heard.
-        - If topic is provided and no history, start the conversation.
+        Supports tool-calling for web search.
         """
         # Build messages
-        messages = [{"role": "system", "content": self.persona}]
+        system_prompt = f"{self.persona}\n\nAvailable Tools:\n- web_search(query): Use this to verify facts or find current information. Call it by writing 'TOOL_CALL: web_search(\"your query\")'."
+        messages = [{"role": "system", "content": system_prompt}]
 
         if topic and not self.conversation_history:
-            # First turn — initiate the conversation
             messages.append({
                 "role": "user",
-                "content": (
-                    f"Start a conversation about this topic: {topic}. "
-                    f"Give your opening thoughts naturally as if speaking aloud."
-                ),
+                "content": f"Start a conversation about: {topic}. If you need to verify something first, use the search tool."
             })
         elif heard_text:
-            # Add conversation history for context
-            for entry in self.conversation_history[-6:]:  # Last 6 turns for context
+            for entry in self.conversation_history[-6:]:
                 messages.append(entry)
-
-            messages.append({
-                "role": "user",
-                "content": heard_text,
-            })
+            messages.append({"role": "user", "content": heard_text})
         else:
-            messages.append({
-                "role": "user",
-                "content": "Continue the conversation naturally.",
-            })
+            messages.append({"role": "user", "content": "Continue the conversation naturally."})
 
-        # Call Ollama
-        self.logger.info(f"🧠 Thinking...")
-        start = time.time()
+        # Tool-Execution Loop (max 2 iterations to avoid loops)
+        for _ in range(2):
+            self.logger.info(f"🧠 Thinking...")
+            try:
+                response = self.http.post(
+                    f"{OLLAMA_BASE_URL}/api/chat",
+                    json={
+                        "model": self.model,
+                        "messages": messages,
+                        "stream": False,
+                        "options": self.options,
+                    },
+                )
+                response.raise_for_status()
+                result = response.json()
+                reply = result["message"]["content"].strip()
 
-        try:
-            response = self.http.post(
-                f"{OLLAMA_BASE_URL}/api/chat",
-                json={
-                    "model": self.model,
-                    "messages": messages,
-                    "stream": False,
-                    "options": self.options,
-                },
-            )
-            response.raise_for_status()
-            result = response.json()
-            reply = result["message"]["content"].strip()
+                # Check for tool call in the response
+                if "TOOL_CALL: web_search(" in reply:
+                    import re
+                    match = re.search(r'TOOL_CALL: web_search\("(.*?)"\)', reply)
+                    if match:
+                        query = match.group(1)
+                        self.logger.info(f"🛠️ Executing Tool: web_search(\"{query}\")")
+                        
+                        if on_tool_call:
+                            on_tool_call("web_search", query)
+                        
+                        # Add assistant's "thinking" with tool call to history
+                        messages.append({"role": "assistant", "content": reply})
+                        
+                        # Execute search
+                        search_results = self.search_web(query)
+                        
+                        # Add tool results as user message (common pattern for LLMs)
+                        messages.append({
+                            "role": "user", 
+                            "content": f"SEARCH_RESULTS:\n{search_results}\n\nPlease synthesize this into your response."
+                        })
+                        continue # Loop to get final answer
 
-        except Exception as e:
-            self.logger.error(f"LLM error: {e}")
-            reply = "Hmm, let me think about that for a moment."
+                # If no tool call or after tool results, we have our final reply
+                break
 
-        elapsed = time.time() - start
-        self.logger.info(f"💭 Thought in {elapsed:.1f}s: {reply[:80]}...")
+            except Exception as e:
+                self.logger.error(f"LLM error: {e}")
+                reply = "Hmm, let me think about that for a moment."
+                break
 
         # Update conversation history
         if heard_text:

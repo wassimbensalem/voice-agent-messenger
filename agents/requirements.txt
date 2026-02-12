@@ -1,2 +1,3 @@
 httpx
 websockets
+duckduckgo-search

@@ -252,6 +252,9 @@ function handleAgentEvent(event) {
         case 'agent_thinking':
             logSystem(`${event.agent.name} // NEURAL_SYNTHESIS...`);
             break;
+        case 'agent_searching':
+            logSystem(`${event.agent.name} // CONSULTING_EXTERNAL_NEURAL_NODES...`);
+            break;
         case 'agent_response':
             logSystem(`${event.agent.name}: ${event.text}`);
             break;
