@@ -50,6 +50,18 @@ export function createAgentRouter(
   router.post('/register', async (req: Request, res: Response) => {
     try {
       const { name, emoji, color } = req.body as AgentRegistrationRequest;
+      const registrationSecret = req.headers['x-registration-secret'];
+      const expectedSecret = process.env.AGENT_REGISTRATION_SECRET;
+
+      // Gate registration with a secret in production
+      if (expectedSecret && registrationSecret !== expectedSecret) {
+        logger.warn(`Unauthorized registration attempt for agent: ${name}`);
+        res.status(403).json({
+          success: false,
+          error: 'Invalid registration secret. Only authorized OpenClaw agents can register.'
+        } as ApiResponse);
+        return;
+      }
 
       if (!name) {
         res.status(400).json({

@@ -12,6 +12,7 @@ const state = {
     connected: false,
     recording: false,
     audioContext: null,
+    analyser: null,
     mediaRecorder: null,
     audioChunks: [],
     mediaStream: null,
@@ -37,13 +38,18 @@ function init() {
     
     elements.connectBtn.addEventListener('click', toggleSystemConnection);
     elements.micBtn.addEventListener('click', toggleMic);
-    
-    // Init Audio Context on first interaction
-    state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
 }
 
 // System Connection
 async function toggleSystemConnection() {
+    // Initialize AudioContext on first click (User Gesture Required)
+    if (!state.audioContext) {
+        state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        state.analyser = state.audioContext.createAnalyser();
+        state.analyser.fftSize = 256; // Tighter bars for the Neo-Brutalist look
+        startVisualizerLoop();
+    }
+
     if (!state.connected) {
         // Connect
         elements.connectBtn.disabled = true;
@@ -82,37 +88,17 @@ async function toggleSystemConnection() {
 }
 
 async function initializeSystem() {
-    // 1. Join Default Room
     await joinRoom(CONFIG.defaultRoom);
-    
-    // 2. Connect to Agent Orchestrator
     await connectAgentWebSocket();
-    
-    // 3. Start Agent Conversation (Topic: General AI)
     startAgentConversation("General AI");
 }
 
 function terminateSystem() {
-    // Stop Recording
     if (state.recording) stopRecording();
-    
-    // Leave Room (Signaling) - Todo: Implement proper leave interaction
-    // Close WS
     if (state.agentWs) state.agentWs.close();
-    
-    // Stop Visualizer
-    // (Optional clean up)
 }
 
-// Room Logic (Simplified)
 async function joinRoom(roomId) {
-    // For now, we simulate joining by just logging it. 
-    // In a real WebRTC setup, we'd exchange SDP here via Signaling Server.
-    // Since we are using Agent Runner separately, we just need to ensure 
-    // we are capturing audio and sending valid transcripts to the Agent.
-    
-    // Important: The Agent Orchestrator handles the "Room" concept for the agents.
-    // For the User, we just need to be "Live".
     logSystem(`Joined Frequency: ${roomId}`);
 }
 
@@ -128,6 +114,11 @@ async function toggleMic() {
 async function startRecording() {
     try {
         state.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        // Connect mic stream to analyser
+        const source = state.audioContext.createMediaStreamSource(state.mediaStream);
+        source.connect(state.analyser);
+
         state.mediaRecorder = new MediaRecorder(state.mediaStream);
         state.audioChunks = [];
         
@@ -145,10 +136,8 @@ async function startRecording() {
         state.recording = true;
         
         elements.micBtn.textContent = 'MIC ACTIVE';
-        elements.micBtn.classList.add('btn-danger'); // Red when active
+        elements.micBtn.classList.add('btn-danger');
         elements.statusDisplay.textContent = 'TRANSMITTING';
-        
-        startVisualizer(state.mediaStream);
         
     } catch (e) {
         console.error(e);
@@ -171,28 +160,16 @@ function stopRecording() {
     }
 }
 
-// Visualizer
-function startVisualizer(stream) {
-    const audioContext = new AudioContext(); // New context or reuse state.audioContext?
-    const analyser = audioContext.createAnalyser();
-    const source = audioContext.createMediaStreamSource(stream);
-    
-    source.connect(analyser);
-    analyser.fftSize = 2048; // Higher res for large display
-    
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
+// Visualizer Loop
+function startVisualizerLoop() {
     const canvas = elements.visualizerCanvas;
     const ctx = canvas.getContext('2d');
     
     function draw() {
-        if (!state.recording) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            return;
-        }
-        
         requestAnimationFrame(draw);
-        analyser.getByteFrequencyData(dataArray);
+        const bufferLength = state.analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        state.analyser.getByteFrequencyData(dataArray);
         
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
@@ -202,7 +179,6 @@ function startVisualizer(stream) {
         
         for (let i = 0; i < bufferLength; i++) {
             barHeight = (dataArray[i] / 255) * canvas.height;
-            
             // OpenClaw Red Color
             ctx.fillStyle = `rgb(255, ${200 - barHeight}, ${200 - barHeight})`;
             ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
@@ -213,7 +189,7 @@ function startVisualizer(stream) {
     draw();
 }
 
-// Transcription (User Speech)
+// Transcription
 async function transcribeAudio(audioBlob) {
     try {
         logSystem('Processing Audio...');
@@ -232,23 +208,8 @@ async function transcribeAudio(audioBlob) {
         
         if (text) {
             logSystem(`YOU: ${text}`);
-            // Send to Agent!!
-            // Wait, we don't have a direct "Send Text to Agent" method in the Orchestrator WS yet?
-            // The Agent listens to audio usually? Or do we act as "User Agent"?
-            // The current implementation uses WebSocket for Agent-to-Browser.
-            // Browser-to-Agent is usually missing in the previous implementation!
-            // Ah, the previous implementation was "Conversational Loop" between Agents.
-            // USER participation was missing!
-            
-            // To make this interactive, we should send this text to the Orchestrator
-            // as a "User Message".
-            // Since Orchestrator manages agents, we can broadcast this text.
-            // But for now, let's just log it. The Agents are talking to each other.
-            // If we want to talk to them, we need to inject this into their context.
-            // This requires backend changes.
-            // For Phase 8 Simplification, let's just show it.
+            // In Phase 10 we don't inject to agents per user request.
         }
-        
     } catch (e) {
         logSystem('Transcription Error.');
     }
@@ -281,19 +242,20 @@ function startAgentConversation(topic) {
         state.agentWs.send(JSON.stringify({
             type: 'start_conversation',
             topic: topic,
-            max_turns: 20, // Long conversation
-            agents: ['scout', 'sage']
+            max_turns: 20
         }));
     }
 }
 
 function handleAgentEvent(event) {
     switch (event.type) {
+        case 'agent_thinking':
+            logSystem(`${event.agent.name} // NEURAL_SYNTHESIS...`);
+            break;
         case 'agent_response':
             logSystem(`${event.agent.name}: ${event.text}`);
             break;
         case 'agent_audio':
-             // Play Audio
             playAgentAudio(event.audio);
             break;
         case 'conversation_start':
@@ -302,22 +264,24 @@ function handleAgentEvent(event) {
     }
 }
 
-function playAgentAudio(base64Audio) {
-    if (!base64Audio) return;
+async function playAgentAudio(base64Audio) {
+    if (!base64Audio || !state.audioContext) return;
     try {
         const binaryString = atob(base64Audio);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
             bytes[i] = binaryString.charCodeAt(i);
         }
-        const blob = new Blob([bytes.buffer], { type: 'audio/wav' });
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audio.play();
         
-        // Visualize Agent Audio? 
-        // We'd need to hook this audio element to the visualizer.
-        // For now, simplier is fine.
+        // Decode and play through analyzer
+        const audioBuffer = await state.audioContext.decodeAudioData(bytes.buffer);
+        const source = state.audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        
+        source.connect(state.analyser);
+        state.analyser.connect(state.audioContext.destination);
+        
+        source.start(0);
     } catch (e) {
         console.error('Audio Playback Error', e);
     }
@@ -338,5 +302,4 @@ async function checkServicesHealth() {
     try { await fetch(`${CONFIG.piperUrl}/health`); elements.piperStatus.classList.add('connected'); } catch {}
 }
 
-// Boot
 document.addEventListener('DOMContentLoaded', init);

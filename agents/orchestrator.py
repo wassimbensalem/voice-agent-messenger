@@ -67,11 +67,16 @@ class Orchestrator:
         async with httpx.AsyncClient() as client:
             try:
                 # 1. Register Host Agent
+                registration_secret = os.getenv("AGENT_REGISTRATION_SECRET")
+                headers = {}
+                if registration_secret:
+                    headers["X-Registration-Secret"] = registration_secret
+
                 resp = await client.post(f"{SIGNALING_URL}/api/agents/register", json={
                     "name": "Orchestrator Host",
                     "emoji": "🤖",
                     "color": "#FF0000"
-                })
+                }, headers=headers)
                 resp.raise_for_status()
                 data = resp.json()
                 self.api_key = data["data"]["apiKey"]
@@ -271,6 +276,14 @@ class Orchestrator:
 
             # Request turn
             logger.info(f"Requesting turn from {agent.name}")
+            
+            # Broadcast THINKING state
+            await self.broadcast({
+                "type": "agent_thinking",
+                "agent": agent.to_dict(),
+                "room_id": self.room_id
+            })
+
             await self.broadcast({
                 "type": "turn_start",
                 "turn": self.turn_count + 1,
@@ -279,6 +292,9 @@ class Orchestrator:
             })
 
             try:
+                # Add a small natural delay before requesting the actual turn
+                await asyncio.sleep(1.5)
+
                 # Send explicit turn request to the agent
                 await agent.ws.send(json.dumps({
                     "type": "turn_request",
