@@ -22,6 +22,8 @@ import { createAuthService, validateJwtSecret, generateSecureSecret } from './se
 import { createSignalingService } from './services/signaling';
 import { createApiRouter } from './routes/api';
 import { createVoiceRouter } from './routes/voice';
+import { createAgentRouter } from './routes/agent';
+import { createAgentService } from './services/agent-service';
 import { ServerConfig } from './types';
 import { logger } from './utils/logger';
 import { 
@@ -81,6 +83,7 @@ export class SignalingServer {
   private config: ServerConfig;
   private roomManager: any;
   private authService: any;
+  private agentService: any;
   private signalingService: any;
   private sessionStorage: RedisSessionStorage | null;
   private rateLimiters: EndpointRateLimiters | null;
@@ -108,6 +111,7 @@ export class SignalingServer {
     // Initialize services
     this.roomManager = createRoomManager(this.config.roomTimeout, this.config.maxParticipants);
     this.authService = createAuthService(this.config.jwtSecret);
+    this.agentService = createAgentService(this.authService);
 
     // Create HTTP server
     this.server = http.createServer(this.app);
@@ -192,9 +196,11 @@ export class SignalingServer {
   private setupRoutes(): void {
     const apiRouter = createApiRouter(this.roomManager, this.authService);
     const voiceRouter = createVoiceRouter(this.roomManager, this.authService);
+    const agentRouter = createAgentRouter(this.agentService, this.authService);
     
     this.app.use('/api', apiRouter);
     this.app.use('/api/voice', voiceRouter);
+    this.app.use('/api/agents', agentRouter);
 
     // Redis health endpoint
     this.app.get('/api/redis-health', async (req, res) => {

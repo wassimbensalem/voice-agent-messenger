@@ -78,7 +78,7 @@ export function createApiRouter(
    */
   router.post('/rooms', authenticate, (req: Request, res: Response) => {
     try {
-      const { name, type, settings } = req.body;
+      const { name, type, settings, connectionUrl, topic } = req.body;
 
       if (!name || typeof name !== 'string') {
         res.status(400).json({
@@ -91,7 +91,7 @@ export function createApiRouter(
       const roomType: RoomType = type === 'video' ? 'video' : 'voice';
       const agentId = (req as any).agentId;
 
-      const room = roomManager.createRoom(name, roomType, agentId, settings as Partial<RoomSettings>);
+      const room = roomManager.createRoom(name, roomType, agentId, settings as Partial<RoomSettings>, connectionUrl, topic);
 
       logger.info(`Room created via API: ${room.id} by ${agentId}`);
 

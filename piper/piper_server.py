@@ -25,17 +25,35 @@ app.add_middleware(
 )
 
 # Configuration
-MODEL_PATH = os.environ.get("PIPER_MODEL_PATH", "/root/.openclaw/workspace-agents/max/piper-models/en_US-amy-medium.onnx")
-PIPER_CMD = os.environ.get("PIPER_CMD", "/root/.openclaw/workspace-agents/max/piper-env/bin/piper")
+# Configuration
+DEFAULT_MODEL_PATH = os.environ.get("PIPER_MODEL_PATH", "/models/en_US-amy-medium.onnx")
+PIPER_CMD = os.environ.get("PIPER_CMD", "piper")
+MODELS_DIR = "/models"
+AVAILABLE_MODELS = {}
+
+def load_models():
+    """Scan models directory for available ONNX files."""
+    if not os.path.exists(MODELS_DIR):
+        return
+    for filename in os.listdir(MODELS_DIR):
+        if filename.endswith(".onnx"):
+            model_name = filename[:-5] # remove .onnx
+            AVAILABLE_MODELS[model_name] = os.path.join(MODELS_DIR, filename)
+            print(f"Loaded model: {model_name}")
 
 class TTSRequest(BaseModel):
     text: str
     output_file: Optional[str] = None
+    voice: Optional[str] = None
 
 class TTSResponse(BaseModel):
     success: bool
     message: str
     audio_path: Optional[str] = None
+
+@app.on_event("startup")
+async def startup_event():
+    load_models()
 
 @app.post("/synthesize")
 async def synthesize_speech(request: TTSRequest):
@@ -46,6 +64,19 @@ async def synthesize_speech(request: TTSRequest):
     if not request.text or len(request.text.strip()) == 0:
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
+    # Select Model
+    model_path = DEFAULT_MODEL_PATH
+    if request.voice:
+        # 1. Exact match
+        if request.voice in AVAILABLE_MODELS:
+            model_path = AVAILABLE_MODELS[request.voice]
+        else:
+            # 2. Partial match
+            for name, path in AVAILABLE_MODELS.items():
+                if request.voice.lower() in name.lower():
+                    model_path = path
+                    break
+    
     try:
         # Create a temporary file for the output
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -55,7 +86,7 @@ async def synthesize_speech(request: TTSRequest):
         process = subprocess.run(
             [
                 PIPER_CMD,
-                "--model", MODEL_PATH,
+                "--model", model_path,
                 "--output_file", output_path
             ],
             input=request.text,
@@ -80,7 +111,11 @@ async def synthesize_speech(request: TTSRequest):
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "model": MODEL_PATH}
+    return {
+        "status": "healthy", 
+        "default_model": DEFAULT_MODEL_PATH,
+        "available_models": list(AVAILABLE_MODELS.keys())
+    }
 
 @app.get("/")
 async def root():

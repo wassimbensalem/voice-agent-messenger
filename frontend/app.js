@@ -1,242 +1,127 @@
-// Configuration
+// CLAW.VOX // System Core
 const CONFIG = {
     signalingUrl: 'http://localhost:8080',
     whisperUrl: 'http://localhost:8001',
     piperUrl: 'http://localhost:5001',
-    agentId: `user-${Math.random().toString(36).substr(2, 9)}`
+    agentId: `user-${Math.random().toString(36).substr(2, 9)}`,
+    defaultRoom: 'General-Lobby'
 };
 
 // State
 const state = {
     connected: false,
     recording: false,
-    currentRoom: null,
     audioContext: null,
     mediaRecorder: null,
     audioChunks: [],
-    socket: null,
-    mediaStream: null
+    mediaStream: null,
+    agentWs: null
 };
 
 // DOM Elements
 const elements = {
-    statusDot: document.getElementById('statusDot'),
-    statusText: document.getElementById('statusText'),
-    createRoomBtn: document.getElementById('createRoomBtn'),
-    joinRoomBtn: document.getElementById('joinRoomBtn'),
-    leaveRoomBtn: document.getElementById('leaveRoomBtn'),
-    roomActive: document.getElementById('roomActive'),
-    roomContent: document.getElementById('roomContent'),
-    roomName: document.getElementById('roomName'),
-    participantCount: document.getElementById('participantCount'),
-    participantList: document.getElementById('participantList'),
-    muteBtn: document.getElementById('muteBtn'),
-    volumeBar: document.getElementById('volumeBar'),
-    recordBtn: document.getElementById('recordBtn'),
-    recordBtnText: document.getElementById('recordBtnText'),
+    connectBtn: document.getElementById('connectBtn'),
+    micBtn: document.getElementById('micBtn'),
+    statusDisplay: document.getElementById('statusDisplay'),
     visualizerCanvas: document.getElementById('visualizerCanvas'),
     transcriptContent: document.getElementById('transcriptContent'),
-    clearTranscriptBtn: document.getElementById('clearTranscriptBtn'),
-    ttsInput: document.getElementById('ttsInput'),
-    speakBtn: document.getElementById('speakBtn'),
-    ttsOutput: document.getElementById('ttsOutput'),
-    ttsAudio: document.getElementById('ttsAudio'),
-    roomModal: document.getElementById('roomModal'),
-    modalTitle: document.getElementById('modalTitle'),
-    roomIdInput: document.getElementById('roomIdInput'),
-    generateRoomIdBtn: document.getElementById('generateRoomIdBtn'),
-    closeModalBtn: document.getElementById('closeModalBtn'),
-    cancelModalBtn: document.getElementById('cancelModalBtn'),
-    confirmModalBtn: document.getElementById('confirmModalBtn'),
     signalingStatus: document.getElementById('signalingStatus'),
     whisperStatus: document.getElementById('whisperStatus'),
     piperStatus: document.getElementById('piperStatus')
 };
 
 // Initialize
-async function init() {
-    console.log('Initializing Voice Agent Messenger...');
+function init() {
+    console.log('booting CLAW.VOX...');
+    checkServicesHealth();
     
-    // Check service health
-    await checkServicesHealth();
+    elements.connectBtn.addEventListener('click', toggleSystemConnection);
+    elements.micBtn.addEventListener('click', toggleMic);
     
-    // Setup event listeners
-    setupEventListeners();
-    
-    // Initialize audio context
+    // Init Audio Context on first interaction
     state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    
-    updateStatus('Ready', 'connected');
 }
 
-// Check Services Health
-async function checkServicesHealth() {
-    try {
-        // Check Signaling Server
-        const signalingResponse = await fetch(`${CONFIG.signalingUrl}/api/health`);
-        if (signalingResponse.ok) {
-            elements.signalingStatus.classList.add('healthy');
+// System Connection
+async function toggleSystemConnection() {
+    if (!state.connected) {
+        // Connect
+        elements.connectBtn.disabled = true;
+        elements.connectBtn.textContent = 'INITIALIZING...';
+        
+        try {
+            await initializeSystem();
+            state.connected = true;
+            elements.connectBtn.textContent = 'TERMINATE LINK';
+            elements.connectBtn.classList.replace('btn-primary', 'btn-danger');
+            elements.micBtn.disabled = false;
+            elements.statusDisplay.textContent = 'SYSTEM.ONLINE';
+            elements.statusDisplay.style.color = 'var(--success)';
+            
+            logSystem('Link Established.');
+        } catch (error) {
+            console.error(error);
+            elements.connectBtn.textContent = 'RETRY LINK';
+            elements.statusDisplay.textContent = 'SYSTEM.ERROR';
+            elements.statusDisplay.style.color = 'var(--danger)';
+        } finally {
+            elements.connectBtn.disabled = false;
         }
-    } catch (error) {
-        console.error('Signaling server not available:', error);
-        elements.signalingStatus.classList.add('error');
-    }
-    
-    try {
-        // Check Whisper STT
-        const whisperResponse = await fetch(`${CONFIG.whisperUrl}/health`);
-        if (whisperResponse.ok) {
-            elements.whisperStatus.classList.add('healthy');
-        }
-    } catch (error) {
-        console.error('Whisper STT not available:', error);
-        elements.whisperStatus.classList.add('error');
-    }
-    
-    try {
-        // Check Piper TTS
-        const piperResponse = await fetch(`${CONFIG.piperUrl}/health`);
-        if (piperResponse.ok) {
-            elements.piperStatus.classList.add('healthy');
-        }
-    } catch (error) {
-        console.error('Piper TTS not available:', error);
-        elements.piperStatus.classList.add('error');
-    }
-}
-
-// Setup Event Listeners
-function setupEventListeners() {
-    elements.createRoomBtn.addEventListener('click', () => openRoomModal('create'));
-    elements.joinRoomBtn.addEventListener('click', () => openRoomModal('join'));
-    elements.leaveRoomBtn.addEventListener('click', leaveRoom);
-    elements.recordBtn.addEventListener('click', toggleRecording);
-    elements.clearTranscriptBtn.addEventListener('click', clearTranscript);
-    elements.speakBtn.addEventListener('click', synthesizeSpeech);
-    elements.generateRoomIdBtn.addEventListener('click', generateRoomId);
-    elements.closeModalBtn.addEventListener('click', closeRoomModal);
-    elements.cancelModalBtn.addEventListener('click', closeRoomModal);
-    elements.confirmModalBtn.addEventListener('click', confirmRoomAction);
-    elements.muteBtn.addEventListener('click', toggleMute);
-}
-
-// Update Status
-function updateStatus(text, status = 'connected') {
-    elements.statusText.textContent = text;
-    elements.statusDot.className = `status-dot ${status}`;
-}
-
-// Room Modal
-let currentModalAction = 'join';
-
-function openRoomModal(action) {
-    currentModalAction = action;
-    elements.modalTitle.textContent = action === 'create' ? 'Create Room' : 'Join Room';
-    elements.roomIdInput.value = '';
-    if (action === 'create') {
-        generateRoomId();
-    }
-    elements.roomModal.classList.add('active');
-}
-
-function closeRoomModal() {
-    elements.roomModal.classList.remove('active');
-}
-
-function generateRoomId() {
-    const roomId = `room-${Math.random().toString(36).substr(2, 9)}`;
-    elements.roomIdInput.value = roomId;
-}
-
-function confirmRoomAction() {
-    const roomId = elements.roomIdInput.value.trim();
-    if (!roomId) {
-        alert('Please enter a room ID');
-        return;
-    }
-    
-    if (currentModalAction === 'create' || currentModalAction === 'join') {
-        joinRoom(roomId);
-    }
-    
-    closeRoomModal();
-}
-
-// Room Management
-function joinRoom(roomId) {
-    state.currentRoom = roomId;
-    elements.roomName.textContent = `Room: ${roomId}`;
-    
-    // Show active room UI
-    document.querySelector('.room-empty').style.display = 'none';
-    elements.roomActive.style.display = 'block';
-    
-    // Add self as participant
-    addParticipant(CONFIG.agentId, 'You', true);
-    
-    updateStatus(`In room: ${roomId}`, 'connected');
-    showNotification(`Joined room: ${roomId}`);
-}
-
-function leaveRoom() {
-    if (!state.currentRoom) return;
-    
-    const roomId = state.currentRoom;
-    state.currentRoom = null;
-    
-    // Hide active room UI
-    document.querySelector('.room-empty').style.display = 'flex';
-    elements.roomActive.style.display = 'none';
-    
-    // Clear participants
-    elements.participantList.innerHTML = '';
-    elements.participantCount.textContent = '0';
-    
-    updateStatus('Ready', 'connected');
-    showNotification(`Left room: ${roomId}`);
-}
-
-function addParticipant(id, name, isLocal = false) {
-    const participantDiv = document.createElement('div');
-    participantDiv.className = 'participant-item';
-    participantDiv.id = `participant-${id}`;
-    
-    const avatar = document.createElement('div');
-    avatar.className = 'participant-avatar';
-    avatar.textContent = name.charAt(0).toUpperCase();
-    
-    const info = document.createElement('div');
-    info.className = 'participant-info';
-    
-    const nameSpan = document.createElement('div');
-    nameSpan.className = 'participant-name';
-    nameSpan.textContent = name;
-    
-    const statusSpan = document.createElement('div');
-    statusSpan.className = 'participant-status';
-    statusSpan.textContent = isLocal ? 'You' : 'Connected';
-    
-    info.appendChild(nameSpan);
-    info.appendChild(statusSpan);
-    
-    participantDiv.appendChild(avatar);
-    participantDiv.appendChild(info);
-    
-    elements.participantList.appendChild(participantDiv);
-    updateParticipantCount();
-}
-
-function updateParticipantCount() {
-    const count = elements.participantList.children.length;
-    elements.participantCount.textContent = count;
-}
-
-// Audio Recording
-async function toggleRecording() {
-    if (state.recording) {
-        stopRecording();
     } else {
+        // Disconnect
+        terminateSystem();
+        state.connected = false;
+        elements.connectBtn.textContent = 'INITIALIZE LINK';
+        elements.connectBtn.classList.replace('btn-danger', 'btn-primary');
+        elements.micBtn.disabled = true;
+        elements.micBtn.textContent = 'MIC OFF';
+        elements.statusDisplay.textContent = 'SYSTEM.STANDBY';
+        elements.statusDisplay.style.color = 'var(--accent-primary)';
+        logSystem('Link Terminated.');
+    }
+}
+
+async function initializeSystem() {
+    // 1. Join Default Room
+    await joinRoom(CONFIG.defaultRoom);
+    
+    // 2. Connect to Agent Orchestrator
+    await connectAgentWebSocket();
+    
+    // 3. Start Agent Conversation (Topic: General AI)
+    startAgentConversation("General AI");
+}
+
+function terminateSystem() {
+    // Stop Recording
+    if (state.recording) stopRecording();
+    
+    // Leave Room (Signaling) - Todo: Implement proper leave interaction
+    // Close WS
+    if (state.agentWs) state.agentWs.close();
+    
+    // Stop Visualizer
+    // (Optional clean up)
+}
+
+// Room Logic (Simplified)
+async function joinRoom(roomId) {
+    // For now, we simulate joining by just logging it. 
+    // In a real WebRTC setup, we'd exchange SDP here via Signaling Server.
+    // Since we are using Agent Runner separately, we just need to ensure 
+    // we are capturing audio and sending valid transcripts to the Agent.
+    
+    // Important: The Agent Orchestrator handles the "Room" concept for the agents.
+    // For the User, we just need to be "Live".
+    logSystem(`Joined Frequency: ${roomId}`);
+}
+
+// Audio / Mic Logic
+async function toggleMic() {
+    if (!state.recording) {
         await startRecording();
+    } else {
+        stopRecording();
     }
 }
 
@@ -251,24 +136,23 @@ async function startRecording() {
         };
         
         state.mediaRecorder.onstop = async () => {
-            const audioBlob = new Blob(state.audioChunks, { type: 'audio/wav' });
-            await transcribeAudio(audioBlob);
-            state.audioChunks = [];
+             const audioBlob = new Blob(state.audioChunks, { type: 'audio/wav' });
+             state.audioChunks = [];
+             await transcribeAudio(audioBlob);
         };
         
         state.mediaRecorder.start();
         state.recording = true;
         
-        elements.recordBtn.classList.add('recording');
-        elements.recordBtnText.textContent = 'Stop Recording';
+        elements.micBtn.textContent = 'MIC ACTIVE';
+        elements.micBtn.classList.add('btn-danger'); // Red when active
+        elements.statusDisplay.textContent = 'TRANSMITTING';
         
-        // Start visualizer
         startVisualizer(state.mediaStream);
         
-        showNotification('Recording started');
-    } catch (error) {
-        console.error('Error starting recording:', error);
-        showNotification('Error accessing microphone', 'error');
+    } catch (e) {
+        console.error(e);
+        logSystem('Mic Error: ' + e.message);
     }
 }
 
@@ -277,42 +161,40 @@ function stopRecording() {
         state.mediaRecorder.stop();
         state.recording = false;
         
-        elements.recordBtn.classList.remove('recording');
-        elements.recordBtnText.textContent = 'Start Recording';
+        elements.micBtn.textContent = 'MIC OFF';
+        elements.micBtn.classList.remove('btn-danger');
+        elements.statusDisplay.textContent = 'SYSTEM.ONLINE';
         
-        // Stop media stream
         if (state.mediaStream) {
-            state.mediaStream.getTracks().forEach(track => track.stop());
+             state.mediaStream.getTracks().forEach(track => track.stop());
         }
-        
-        showNotification('Recording stopped');
     }
 }
 
-// Audio Visualizer
+// Visualizer
 function startVisualizer(stream) {
-    const audioContext = new AudioContext();
+    const audioContext = new AudioContext(); // New context or reuse state.audioContext?
     const analyser = audioContext.createAnalyser();
     const source = audioContext.createMediaStreamSource(stream);
     
     source.connect(analyser);
-    analyser.fftSize = 256;
+    analyser.fftSize = 2048; // Higher res for large display
     
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
-    
     const canvas = elements.visualizerCanvas;
     const ctx = canvas.getContext('2d');
     
     function draw() {
-        if (!state.recording) return;
+        if (!state.recording) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            return;
+        }
         
         requestAnimationFrame(draw);
-        
         analyser.getByteFrequencyData(dataArray);
         
-        ctx.fillStyle = 'rgba(10, 14, 39, 0.3)';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         
         const barWidth = (canvas.width / bufferLength) * 2.5;
         let barHeight;
@@ -321,25 +203,20 @@ function startVisualizer(stream) {
         for (let i = 0; i < bufferLength; i++) {
             barHeight = (dataArray[i] / 255) * canvas.height;
             
-            const gradient = ctx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
-            gradient.addColorStop(0, '#667eea');
-            gradient.addColorStop(1, '#764ba2');
-            
-            ctx.fillStyle = gradient;
+            // OpenClaw Red Color
+            ctx.fillStyle = `rgb(255, ${200 - barHeight}, ${200 - barHeight})`;
             ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
             
             x += barWidth + 1;
         }
     }
-    
     draw();
 }
 
-// Speech to Text
+// Transcription (User Speech)
 async function transcribeAudio(audioBlob) {
     try {
-        showNotification('Transcribing...');
-        
+        logSystem('Processing Audio...');
         const formData = new FormData();
         formData.append('audio', audioBlob, 'recording.wav');
         
@@ -348,106 +225,118 @@ async function transcribeAudio(audioBlob) {
             body: formData
         });
         
-        if (!response.ok) {
-            throw new Error('Transcription failed');
-        }
+        if (!response.ok) throw new Error('Transcription failed');
         
         const result = await response.json();
-        addTranscript(result.text || 'No speech detected');
-        showNotification('Transcription complete');
-    } catch (error) {
-        console.error('Transcription error:', error);
-        showNotification('Transcription failed', 'error');
+        const text = result.text;
+        
+        if (text) {
+            logSystem(`YOU: ${text}`);
+            // Send to Agent!!
+            // Wait, we don't have a direct "Send Text to Agent" method in the Orchestrator WS yet?
+            // The Agent listens to audio usually? Or do we act as "User Agent"?
+            // The current implementation uses WebSocket for Agent-to-Browser.
+            // Browser-to-Agent is usually missing in the previous implementation!
+            // Ah, the previous implementation was "Conversational Loop" between Agents.
+            // USER participation was missing!
+            
+            // To make this interactive, we should send this text to the Orchestrator
+            // as a "User Message".
+            // Since Orchestrator manages agents, we can broadcast this text.
+            // But for now, let's just log it. The Agents are talking to each other.
+            // If we want to talk to them, we need to inject this into their context.
+            // This requires backend changes.
+            // For Phase 8 Simplification, let's just show it.
+        }
+        
+    } catch (e) {
+        logSystem('Transcription Error.');
     }
 }
 
-function addTranscript(text) {
-    // Remove placeholder if exists
-    const placeholder = elements.transcriptContent.querySelector('.placeholder');
-    if (placeholder) {
-        placeholder.remove();
+// Agent Logic (WebSocket)
+function connectAgentWebSocket() {
+    return new Promise((resolve, reject) => {
+        const wsUrl = `ws://${window.location.hostname}:8765`;
+        state.agentWs = new WebSocket(wsUrl);
+        
+        state.agentWs.onopen = () => {
+            logSystem('Connected to Neural Core.');
+            resolve();
+        };
+        
+        state.agentWs.onmessage = (event) => {
+            handleAgentEvent(JSON.parse(event.data));
+        };
+        
+        state.agentWs.onerror = (err) => {
+            logSystem('Neural Core Connection Failed.');
+            reject(err);
+        };
+    });
+}
+
+function startAgentConversation(topic) {
+    if (state.agentWs && state.agentWs.readyState === WebSocket.OPEN) {
+        state.agentWs.send(JSON.stringify({
+            type: 'start_conversation',
+            topic: topic,
+            max_turns: 20, // Long conversation
+            agents: ['scout', 'sage']
+        }));
     }
-    
-    const transcriptDiv = document.createElement('div');
-    transcriptDiv.className = 'transcript-item';
-    
-    const timeDiv = document.createElement('div');
-    timeDiv.className = 'transcript-time';
-    timeDiv.textContent = new Date().toLocaleTimeString();
-    
-    const textDiv = document.createElement('div');
-    textDiv.textContent = text;
-    
-    transcriptDiv.appendChild(timeDiv);
-    transcriptDiv.appendChild(textDiv);
-    
-    elements.transcriptContent.appendChild(transcriptDiv);
+}
+
+function handleAgentEvent(event) {
+    switch (event.type) {
+        case 'agent_response':
+            logSystem(`${event.agent.name}: ${event.text}`);
+            break;
+        case 'agent_audio':
+             // Play Audio
+            playAgentAudio(event.audio);
+            break;
+        case 'conversation_start':
+            logSystem(`System Topic: ${event.topic}`);
+            break;
+    }
+}
+
+function playAgentAudio(base64Audio) {
+    if (!base64Audio) return;
+    try {
+        const binaryString = atob(base64Audio);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        const blob = new Blob([bytes.buffer], { type: 'audio/wav' });
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.play();
+        
+        // Visualize Agent Audio? 
+        // We'd need to hook this audio element to the visualizer.
+        // For now, simplier is fine.
+    } catch (e) {
+        console.error('Audio Playback Error', e);
+    }
+}
+
+// Utilities
+function logSystem(text) {
+    const div = document.createElement('div');
+    div.className = 'transcript-item';
+    div.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+    elements.transcriptContent.appendChild(div);
     elements.transcriptContent.scrollTop = elements.transcriptContent.scrollHeight;
 }
 
-function clearTranscript() {
-    elements.transcriptContent.innerHTML = '<p class="placeholder">Your transcription will appear here...</p>';
+async function checkServicesHealth() {
+    try { await fetch(`${CONFIG.signalingUrl}/api/health`); elements.signalingStatus.classList.add('connected'); } catch {}
+    try { await fetch(`${CONFIG.whisperUrl}/health`); elements.whisperStatus.classList.add('connected'); } catch {}
+    try { await fetch(`${CONFIG.piperUrl}/health`); elements.piperStatus.classList.add('connected'); } catch {}
 }
 
-// Text to Speech
-async function synthesizeSpeech() {
-    const text = elements.ttsInput.value.trim();
-    
-    if (!text) {
-        showNotification('Please enter text to synthesize', 'error');
-        return;
-    }
-    
-    try {
-        showNotification('Synthesizing speech...');
-        elements.speakBtn.disabled = true;
-        
-        const response = await fetch(`${CONFIG.piperUrl}/synthesize`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ text })
-        });
-        
-        if (!response.ok) {
-            throw new Error('Speech synthesis failed');
-        }
-        
-        const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        
-        elements.ttsAudio.src = audioUrl;
-        elements.ttsOutput.style.display = 'block';
-        elements.ttsAudio.play();
-        
-        showNotification('Speech synthesized successfully');
-    } catch (error) {
-        console.error('TTS error:', error);
-        showNotification('Speech synthesis failed', 'error');
-    } finally {
-        elements.speakBtn.disabled = false;
-    }
-}
-
-// Mute Toggle
-function toggleMute() {
-    if (state.mediaStream) {
-        const audioTrack = state.mediaStream.getAudioTracks()[0];
-        audioTrack.enabled = !audioTrack.enabled;
-        
-        elements.muteBtn.style.opacity = audioTrack.enabled ? '1' : '0.5';
-        showNotification(audioTrack.enabled ? 'Unmuted' : 'Muted');
-    }
-}
-
-// Notifications
-function showNotification(message, type = 'info') {
-    console.log(`[${type.toUpperCase()}] ${message}`);
-    
-    // You can implement a toast notification system here
-    // For now, we'll just log to console
-}
-
-// Initialize on load
+// Boot
 document.addEventListener('DOMContentLoaded', init);

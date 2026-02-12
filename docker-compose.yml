@@ -80,7 +80,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -106,5 +106,78 @@ services:
       retries: 3
     restart: unless-stopped
 
+  # AI Agent Orchestrator
+  orchestrator:
+    build: 
+      context: ./agents
+    container_name: voice-agent-orchestrator
+    command: python -u orchestrator.py
+    ports:
+      - "8765:8765"
+    environment:
+      - SIGNALING_URL=http://signaling:8080
+      - ORCHESTRATOR_TOPIC=General AI
+    depends_on:
+      signaling:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+  agent-scout:
+    build: 
+      context: ./agents
+    container_name: voice-agent-scout
+    command: python -u agent_runner.py scout
+    environment:
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - WHISPER_URL=http://whisper:8001
+      - PIPER_URL=http://piper:5001
+      - SIGNALING_URL=http://signaling:8080
+      - ORCHESTRATOR_URL=ws://orchestrator:8765/agent
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./agent-memory:/app/history
+    depends_on:
+      orchestrator:
+        condition: service_started
+      signaling:
+        condition: service_healthy
+      whisper:
+        condition: service_started
+      piper:
+        condition: service_started
+
+    restart: on-failure
+
+  agent-sage:
+    build: 
+      context: ./agents
+    container_name: voice-agent-sage
+    command: python -u agent_runner.py sage
+    environment:
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - WHISPER_URL=http://whisper:8001
+      - PIPER_URL=http://piper:5001
+      - SIGNALING_URL=http://signaling:8080
+      - ORCHESTRATOR_URL=ws://orchestrator:8765/agent
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./agent-memory:/app/history
+    depends_on:
+      orchestrator:
+        condition: service_started
+      signaling:
+        condition: service_healthy
+      whisper:
+        condition: service_started
+      piper:
+        condition: service_started
+
+    restart: on-failure
+
 volumes:
   redis_data:
+
+

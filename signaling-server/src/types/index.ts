@@ -11,6 +11,8 @@ export interface Room {
   createdAt: Date;
   maxParticipants: number;
   settings: RoomSettings;
+  connectionUrl?: string; // WebSocket URL for agents to connect to
+  topic?: string; // Topic of conversation
 }
 
 export type RoomType = 'voice' | 'video';
@@ -176,4 +178,26 @@ export interface SignalingEvents {
   'signal:offer': (data: { roomId: string; from: string; to: string; sdp: any }) => void;
   'signal:answer': (data: { roomId: string; from: string; to: string; sdp: any }) => void;
   'signal:candidate': (data: { roomId: string; from: string; to: string; candidate: any }) => void;
+}
+
+// Agent Types
+export interface AgentProfile {
+  id: string;
+  name: string;
+  emoji: string;
+  color: string;
+  registeredAt: Date;
+  lastActiveAt?: Date;
+}
+
+export interface AgentRegistrationRequest {
+  name: string;
+  emoji?: string;
+  color?: string;
+}
+
+export interface AgentRegistrationResponse {
+  agentId: string;
+  apiKey: string;
+  profile: AgentProfile;
 }

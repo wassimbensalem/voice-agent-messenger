@@ -5,13 +5,14 @@ WORKDIR /app
 # Install system dependencies for Piper
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    espeak-ng \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
 COPY piper_requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r piper_requirements.txt
+# Install Python dependencies including Piper
+RUN pip install --no-cache-dir -r piper_requirements.txt piper-tts
 
 # Copy application
 COPY piper_server.py .

@@ -201,6 +201,20 @@ export class AuthService {
       roles: (payload as any).roles || []
     };
   }
+
+  /**
+   * Generate an API key for an agent (long-lived JWT)
+   */
+  generateApiKey(agentId: string): string {
+    const payload = {
+      agentId,
+      type: 'api_key'
+    };
+
+    // API keys last 1 year
+    const options: SignOptions = { expiresIn: '365d' };
+    return jwt.sign(payload, this.jwtSecret, options);
+  }
 }
 
 export const createAuthService = (jwtSecret: string): AuthService => {

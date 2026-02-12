@@ -44,7 +44,9 @@ export class RoomManager {
     name: string,
     type: RoomType,
     createdBy: string,
-    settings?: Partial<RoomSettings>
+    settings?: Partial<RoomSettings>,
+    connectionUrl?: string,
+    topic?: string
   ): Room {
     const roomId = uuidv4();
     const now = new Date();
@@ -60,7 +62,9 @@ export class RoomManager {
         muteOnEntry: settings?.muteOnEntry ?? false,
         allowRecording: settings?.allowRecording ?? false,
         maxDuration: settings?.maxDuration ?? 60 // 60 minutes default
-      }
+      },
+      connectionUrl,
+      topic
     };
 
     this.rooms.set(roomId, room);
